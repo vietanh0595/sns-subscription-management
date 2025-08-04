@@ -1,0 +1,227 @@
+AWSTemplateFormatVersion: "2010-09-09"
+
+Resources:
+  LambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: lambda-role
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action:
+              - sts:AssumeRole
+            Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+        Version: "2012-10-17"
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AWSLambdaExecute
+        - arn:aws:iam::aws:policy/AmazonS3FullAccess
+      Policies:
+        - PolicyName: AllowSubscribeToSNSTopic
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: sns:Subscribe
+                Resource: !Ref MySNSTopic
+        - PolicyName: AllowPublishToSNSTopic
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: sns:Publish
+                Resource: !Ref MySNSTopic
+      Path: /
+
+  MySNSTopic:
+    Type: AWS::SNS::Topic
+    Properties: 
+        TopicName: "CfSampleTopic"
+
+  LambdaApiInvokePermission1:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref SubscribeLambdaFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${MyApi}/*/*/*
+
+  LambdaApiInvokePermission2:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref CreateEventLambdaFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${MyApi}/*/*/*
+
+  SubscribeLambdaFunction:
+    Type: AWS::Lambda::Function
+    Metadata:
+      guard:
+        SuppressedRules:
+          - LAMBDA_INSIDE_VPC
+          - LAMBDA_FUNCTION_PUBLIC_ACCESS_PROHIBITED
+    Properties:
+      FunctionName: cf-createSubscisption
+      Description: LambdaFunction using nodejs22.x.
+      Runtime: nodejs22.x
+      Role: !GetAtt LambdaRole.Arn
+      Code:
+        ZipFile: !Sub |
+          const { SubscribeCommand, SNSClient } = require("@aws-sdk/client-sns");;
+          const snsClient = new SNSClient({});
+
+          exports.handler = async (event) => {
+            const { email } = JSON.parse(event.body);
+            return await subscribeEmail(email);
+          };
+
+          const subscribeEmail = async (
+            emailAddress,
+            topicArn = '${MySNSTopic}',
+          ) => {
+            const response = await snsClient.send(
+              new SubscribeCommand({
+                Protocol: "email",
+                TopicArn: topicArn,
+                Endpoint: emailAddress,
+              }),
+            );
+            console.log(response);
+            return response;
+          };
+      Handler: index.handler
+      MemorySize: 128
+      Timeout: 10
+      Environment:
+        Variables:
+          ENV: Dev
+          TZ: UTC
+
+  CreateEventLambdaFunction:
+    Type: AWS::Lambda::Function
+    Metadata:
+      guard:
+        SuppressedRules:
+          - LAMBDA_INSIDE_VPC
+          - LAMBDA_FUNCTION_PUBLIC_ACCESS_PROHIBITED
+    Properties:
+      FunctionName: cf-createEvent
+      Description: LambdaFunction using nodejs22.x.
+      Runtime: nodejs22.x
+      Role: !GetAtt LambdaRole.Arn
+      Code:
+        ZipFile: !Sub |
+          const { PublishCommand, SNSClient } = require("@aws-sdk/client-sns");;
+          const snsClient = new SNSClient({});
+
+          exports.handler = async (event) => {
+            const { message } = JSON.parse(event.body);
+            return await publish(message);
+          };
+
+          const publish = async (
+            message,
+            topicArn = '${MySNSTopic}',
+          ) => {
+            const response = await snsClient.send(
+              new PublishCommand({
+                Message: message,
+                TopicArn: topicArn,
+              }),
+            );
+            console.log(response);
+            return response;
+          }
+      Handler: index.handler
+      MemorySize: 128
+      Timeout: 10
+      Environment:
+        Variables:
+          ENV: Dev
+          TZ: UTC
+
+  MyApi:
+    Type: AWS::ApiGateway::RestApi
+    Properties:
+      Name: myAPI
+
+  MyApiTestDeployment:
+    Type: 'AWS::ApiGateway::Deployment'
+    DependsOn:
+      - ProxyResourceANY1
+      - ProxyResourceANY2
+    Properties:
+      RestApiId: !Ref MyApi
+      Description: My deployment
+      StageName: TestStage
+
+  ProxyResource1:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref MyApi
+      ParentId: !GetAtt MyApi.RootResourceId
+      PathPart: "subscribe"
+
+  ProxyResource2:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref MyApi
+      ParentId: !GetAtt MyApi.RootResourceId
+      PathPart: "create-event"
+
+  ProxyResourceANY1:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref MyApi
+      ResourceId: !Ref ProxyResource1
+      HttpMethod: POST
+      AuthorizationType: NONE
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${SubscribeLambdaFunction.Arn}/invocations
+
+  ProxyResourceANY2:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref MyApi
+      ResourceId: !Ref ProxyResource2
+      HttpMethod: POST
+      AuthorizationType: NONE
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${CreateEventLambdaFunction.Arn}/invocations
+
+  S3SnsBucket:
+    Type: 'AWS::S3::Bucket'
+    Properties:
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: false
+        BlockPublicPolicy: false
+        IgnorePublicAcls: false
+        RestrictPublicBuckets: false
+      BucketName: cf-sns-website-bucket
+      WebsiteConfiguration:
+        IndexDocument: index.html
+
+  BucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref S3SnsBucket
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Action:
+              - 's3:GetObject'
+            Effect: Allow
+            Resource: !Join
+              - ''
+              - - 'arn:aws:s3:::'
+                - !Ref S3SnsBucket
+                - /*
+            Principal: '*'
+
+Transform: AWS::Serverless-2016-10-31

@@ -89,7 +89,15 @@ Resources:
               }),
             );
             console.log(response);
-            return response;
+            return {
+              statusCode: 200,
+              headers: {
+                "Access-Control-Allow-Origin": "http://${S3SnsBucket}.s3-website-${AWS::Region}.amazonaws.com",
+                "Access-Control-Allow-Headers": "Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token",
+                "Access-Control-Allow-Methods": "OPTIONS,POST"
+              },
+              body: JSON.stringify(response),
+            };
           };
       Handler: index.handler
       MemorySize: 128
@@ -132,7 +140,15 @@ Resources:
               }),
             );
             console.log(response);
-            return response;
+            return {
+              statusCode: 200,
+              headers: {
+                "Access-Control-Allow-Origin": "http://${S3SnsBucket}.s3-website-${AWS::Region}.amazonaws.com",
+                "Access-Control-Allow-Headers": "Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token",
+                "Access-Control-Allow-Methods": "OPTIONS,POST"
+              },
+              body: JSON.stringify(response),
+            };
           }
       Handler: index.handler
       MemorySize: 128
@@ -171,8 +187,62 @@ Resources:
       ParentId: !GetAtt MyApi.RootResourceId
       PathPart: "create-event"
 
+  SubscribeOptions:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref MyApi
+      ResourceId: !Ref ProxyResource1
+      HttpMethod: OPTIONS
+      AuthorizationType: NONE
+      Integration:
+        Type: MOCK
+        RequestTemplates:
+          application/json: '{ "statusCode": 200 }'
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+              method.response.header.Access-Control-Allow-Methods: "'OPTIONS,POST'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+            ResponseTemplates:
+              application/json: ''
+      MethodResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Methods: true
+            method.response.header.Access-Control-Allow-Origin: true
+
+  EventOptions:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref MyApi
+      ResourceId: !Ref ProxyResource2
+      HttpMethod: OPTIONS
+      AuthorizationType: NONE
+      Integration:
+        Type: MOCK
+        RequestTemplates:
+          application/json: '{ "statusCode": 200 }'
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+              method.response.header.Access-Control-Allow-Methods: "'OPTIONS,POST'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+            ResponseTemplates:
+              application/json: ''
+      MethodResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Methods: true
+            method.response.header.Access-Control-Allow-Origin: true
+
   ProxyResourceANY1:
     Type: AWS::ApiGateway::Method
+    DependsOn:
+      - S3SnsBucket
     Properties:
       RestApiId: !Ref MyApi
       ResourceId: !Ref ProxyResource1
@@ -185,6 +255,8 @@ Resources:
 
   ProxyResourceANY2:
     Type: AWS::ApiGateway::Method
+    DependsOn:
+      - S3SnsBucket
     Properties:
       RestApiId: !Ref MyApi
       ResourceId: !Ref ProxyResource2
@@ -223,5 +295,12 @@ Resources:
                 - !Ref S3SnsBucket
                 - /*
             Principal: '*'
+Outputs:
+  BucketName:
+    Value: !Ref S3SnsBucket
+  WebsiteURL:
+    Value: !Sub "http://${S3SnsBucket}.s3-website-${AWS::Region}.amazonaws.com"
+  ApiUrl:
+    Value: !Sub "https://${MyApi}.execute-api.${AWS::Region}.amazonaws.com/TestStage/"
 
 Transform: AWS::Serverless-2016-10-31

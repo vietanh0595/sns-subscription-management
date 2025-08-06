@@ -2,6 +2,7 @@ import { CommonModule } from '@angular/common';
 import { HttpClient } from '@angular/common/http';
 import { Component, inject } from '@angular/core';
 import { FormsModule } from '@angular/forms';
+import { environment } from '../environments/environment';
 
 @Component({
   selector: 'app-root',
@@ -12,7 +13,7 @@ import { FormsModule } from '@angular/forms';
 })
 export class AppComponent {
   private http = inject(HttpClient);
-  private apiRoot = 'https://2bvrsi2i93.execute-api.us-east-1.amazonaws.com';
+  private apiRoot = environment.apiUrl;
 
   email: string = '';
   message: string = '';

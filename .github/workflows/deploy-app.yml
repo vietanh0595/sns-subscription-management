@@ -12,7 +12,7 @@ jobs:
 
     env:
       STACK_NAME: test-stack
-      TEMPLATE_FILE: /cloudformation/infra.yaml
+      TEMPLATE_FILE: cloudformation/infra.yaml
       REGION: ap-southeast-2 # adjust based on your target
 
     steps:
@@ -24,12 +24,6 @@ jobs:
         with:
           node-version: '18'
 
-      - name: Install dependencies
-        run: npm install
-
-      - name: Build Angular app
-        run: npm run build
-
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -37,6 +31,52 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.REGION }}
 
-      - name: Check AWS Creds
+      - name: Deploy CloudFormation stack
         run: |
-          aws sts get-caller-identity
+          aws cloudformation deploy \
+            --template-file $TEMPLATE_FILE \
+            --stack-name $STACK_NAME \
+            --capabilities CAPABILITY_NAMED_IAM
+
+      - name: Get CloudFormation outputs (S3 bucket name, website URL, API URL)
+        id: get-outputs
+        run: |
+          BUCKET_NAME=$(aws cloudformation describe-stacks \
+            --stack-name $STACK_NAME \
+            --query "Stacks[0].Outputs[?OutputKey=='BucketName'].OutputValue" \
+            --output text)
+
+          WEBSITE_URL=$(aws cloudformation describe-stacks \
+            --stack-name $STACK_NAME \
+            --query "Stacks[0].Outputs[?OutputKey=='WebsiteURL'].OutputValue" \
+            --output text)
+
+          API_URL=$(aws cloudformation describe-stacks \
+            --stack-name $STACK_NAME \
+            --query "Stacks[0].Outputs[?OutputKey=='ApiUrl'].OutputValue" \
+            --output text)
+
+          echo "bucket=$BUCKET_NAME" >> $GITHUB_OUTPUT
+          echo "website=$WEBSITE_URL" >> $GITHUB_OUTPUT
+          echo "api=$API_URL" >> $GITHUB_OUTPUT
+
+      - name: Replace API URL in Angular environment file
+        run: |
+          sed -i "s|API_URL_PLACEHOLDER|${{ steps.get-outputs.outputs.api }}|g" src/environments/environment.ts
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build Angular app
+        run: npm run build
+
+      - name: Deploy Angular build to S3
+        run: |
+          aws s3 sync dist/sns-subscription-management/browser s3://${{ steps.get-outputs.outputs.bucket }} \
+            --delete
+
+      - name: Print values
+        run: |
+          echo "Bucket Name: ${{ steps.get-outputs.outputs.bucket }}"
+          echo "Website URL: ${{ steps.get-outputs.outputs.website }}"
+          echo "API URL: ${{ steps.get-outputs.outputs.api }}"

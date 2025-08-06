@@ -1,0 +1,42 @@
+# File: .github/workflows/deploy.yml
+name: Build and Deploy Angular to S3 via CloudFormation
+
+on:
+  push:
+    branches:
+      - master
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    env:
+      STACK_NAME: test-stack
+      TEMPLATE_FILE: /cloudformation/infra.yaml
+      REGION: ap-southeast-2 # adjust based on your target
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v3
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build Angular app
+        run: npm run build
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.REGION }}
+
+      - name: Check AWS Creds
+        run: |
+          aws sts get-caller-identity

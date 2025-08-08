@@ -301,6 +301,6 @@ Outputs:
   WebsiteURL:
     Value: !Sub "http://${S3SnsBucket}.s3-website-${AWS::Region}.amazonaws.com"
   ApiUrl:
-    Value: !Sub "https://${MyApi}.execute-api.${AWS::Region}.amazonaws.com/TestStage/"
+    Value: !Sub "https://${MyApi}.execute-api.${AWS::Region}.amazonaws.com/TestStage"
 
 Transform: AWS::Serverless-2016-10-31

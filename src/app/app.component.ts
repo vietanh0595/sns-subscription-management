@@ -20,7 +20,7 @@ export class AppComponent {
 
   subscribe() {
     this.http
-      .post(`${this.apiRoot}/subscibe`, { email: this.email })
+      .post(`${this.apiRoot}/subscribe`, { email: this.email })
       .subscribe((event) => {
         console.log('Subscription successful:', event);
       });
